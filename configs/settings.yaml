@@ -1,0 +1,6 @@
+# App config
+data_dir: "backend/data"
+duckdb_path: "backend/data/nielsen.duckdb"
+parquet_path: "backend/data/fact.parquet"
+table_name: "fact"
+max_rows: 5000

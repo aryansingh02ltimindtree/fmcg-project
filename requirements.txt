@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+pandas
+duckdb
+pyyaml
+openpyxl
+plotly
+streamlit

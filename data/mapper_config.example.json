@@ -1,0 +1,10 @@
+{
+  "date": "date",
+  "market": "market",
+  "channel": "channel",
+  "category": "category",
+  "brand": "brand",
+  "value_sales": "value_sales",
+  "unit_sales": "unit_sales",
+  "share": "share"
+}
