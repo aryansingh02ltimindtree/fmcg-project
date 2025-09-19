@@ -1,0 +1,98 @@
+--- SAMPLE 1 ---
+{
+  "category": "Beverages",
+  "market": "India",
+  "period": "2024-09..2025-08",
+  "mat_sales_cr": 12.988,
+  "yoy": 0.0336,
+  "leaders": [
+    {
+      "brand": "Fizz",
+      "mat_cr": 4.291,
+      "share": 0.3304
+    },
+    {
+      "brand": "Splash",
+      "mat_cr": 3.499,
+      "share": 0.2694
+    },
+    {
+      "brand": "Hydra",
+      "mat_cr": 2.908,
+      "share": 0.2239
+    },
+    {
+      "brand": "Quench",
+      "mat_cr": 2.29,
+      "share": 0.1763
+    }
+  ],
+  "top_movers": [
+    {
+      "brand": "Fizz",
+      "yoy": 0.0455
+    },
+    {
+      "brand": "Hydra",
+      "yoy": 0.0406
+    },
+    {
+      "brand": "Quench",
+      "yoy": 0.0319
+    }
+  ],
+  "lead_share_pp_delta": 0.0038
+}
+• Beverages (India) MAT ₹12.988Cr; YoY 3.36%.
+• Fizz leads at 33.04% (+0.38 pp vs LY).
+• Top mover: Fizz (+4.55%).
+
+--- SAMPLE 2 ---
+{
+  "category": "Biscuits",
+  "market": "India",
+  "period": "2024-09..2025-08",
+  "mat_sales_cr": 5.582,
+  "yoy": 0.0101,
+  "leaders": [
+    {
+      "brand": "Alpha",
+      "mat_cr": 1.723,
+      "share": 0.3087
+    },
+    {
+      "brand": "Beta",
+      "mat_cr": 1.494,
+      "share": 0.2676
+    },
+    {
+      "brand": "Gamma",
+      "mat_cr": 1.312,
+      "share": 0.235
+    },
+    {
+      "brand": "Delta",
+      "mat_cr": 1.054,
+      "share": 0.1888
+    }
+  ],
+  "top_movers": [
+    {
+      "brand": "Beta",
+      "yoy": 0.0179
+    },
+    {
+      "brand": "Delta",
+      "yoy": 0.015
+    },
+    {
+      "brand": "Gamma",
+      "yoy": 0.0114
+    }
+  ],
+  "lead_share_pp_delta": -0.0033
+}
+• Biscuits (India) MAT ₹5.582Cr; YoY 1.01%.
+• Alpha leads at 30.87% (−0.33 pp vs LY).
+• Top mover: Beta (+1.79%).
+
