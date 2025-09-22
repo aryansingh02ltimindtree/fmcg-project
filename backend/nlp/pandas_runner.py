@@ -1510,7 +1510,7 @@
 
 
 
-
+#Working code Line trends by brand, YoY MAT,etc working
 
 
 
@@ -1622,14 +1622,26 @@ def apply_filters(df, filters):
     for col, val in (filters or {}).items():
         if col not in out.columns:
             continue
-        # case-insensitive, trimmed comparisons
-        if isinstance(val, list):
-            vals = [str(v).strip().lower() for v in val]
-            out = out[out[col].astype(str).str.strip().str.lower().isin(vals)]
-        else:
-            v = str(val).strip().lower()
-            out = out[out[col].astype(str).str.strip().str.lower() == v]
+
+        # Normalize the column to lower/trimmed strings for case-insensitive matching
+        col_series = out[col].astype(str).str.strip().str.lower()
+
+        # Multiple values (e.g., ["alpha", "beta"] or set/tuple) → IN filter
+        if isinstance(val, (list, tuple, set)):
+            norm_vals = {str(v).strip().lower() for v in val if v is not None and str(v).strip() != ""}
+            if not norm_vals:
+                continue  # nothing to filter on
+            out = out[col_series.isin(norm_vals)]
+            continue
+
+        # Single value (skip None/empty)
+        if val is None or (isinstance(val, str) and val.strip() == ""):
+            continue
+        v = str(val).strip().lower()
+        out = out[col_series == v]
+
     return out
+
 
 def aggregate(df: pd.DataFrame, dims: List[str], measure_col: str = "value_sales") -> pd.DataFrame:
     gcols = [c for c in (dims or []) if c in df.columns]
@@ -1664,21 +1676,19 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
       - time_range: {"mode":"YTD"|"MAT"} or {"start":"YYYY-MM","end":"YYYY-MM"}
       - top_n: int
       - mom: bool
-      - is_yoy: bool (explicit YoY request)
-      - brand_group: bool (explicit "by brand" request)
-      - has_brand_filter: bool (explicit brand fixed by filter)
+      - is_yoy: bool
+      - brand_group: bool
+      - has_brand_filter: bool
       - raw_text: original user question (string)
     """
     import numpy as np
     import re
     from typing import List, Optional
 
-    # ---- numeric-only sanitizer to avoid filling categoricals with 0 ----
+    # ---- numeric-only sanitizer (avoid categorical fill with 0) ----
     def _safe_numeric_fill(frame: pd.DataFrame) -> pd.DataFrame:
         f = frame.copy()
-        # replace inf with NaN everywhere first
         f.replace([np.inf, -np.inf], np.nan, inplace=True)
-        # fill only numeric columns with 0
         num_cols = f.select_dtypes(include=[np.number]).columns
         if len(num_cols) > 0:
             f[num_cols] = f[num_cols].fillna(0)
@@ -1713,16 +1723,63 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
     task                  = intent.get("task") or "table"
     raw_text              = (intent.get("raw_text") or "").lower()
 
-    # If grouping by brand, drop any brand filter (avoid double restriction)
-    if brand_group and "brand" in filters:
-        filters.pop("brand", None)
-
     # ---------- date column ----------
     df = df.copy()
     if "date" not in df.columns:
         raise ValueError("Data must have a 'date' column.")
     df["date"] = pd.to_datetime(df["date"])
     dataset_last_full = df["date"].max().to_period("M").to_timestamp(how="end")
+
+    # ---------- NEW: extract multi-brand from the raw text when NLP didn't set filters ----------
+    # (keeps existing behavior if filters.brand is already present)
+    if ("brand" not in filters) or (not filters["brand"]):
+        if "brand" in df.columns and raw_text:
+            # normalize helper
+            def _norm(s: str) -> str:
+                return re.sub(r"[^a-z0-9]+", "", str(s).lower())
+            text_norm = _norm(raw_text)
+
+            # try to read explicit lists after "brand"/"brands"
+            explicit_tokens: List[str] = []
+            for m in re.findall(r"brands?\s*[:\-]?\s*([a-z0-9 /,&+\-]+)", raw_text):
+                parts = re.split(r"\s*(?:,|and|&|\+|vs|versus)\s*", m)
+                explicit_tokens.extend([p for p in parts if p.strip()])
+
+            uniq_brands = pd.Series(df["brand"].astype(str).str.strip()).dropna().unique()
+            # inverse map for fuzzy token match
+            inv = {_norm(b): b for b in uniq_brands}
+
+            chosen: List[str] = []
+
+            if explicit_tokens:
+                for tok in explicit_tokens:
+                    key = _norm(tok)
+                    if key in inv and inv[key] not in chosen:
+                        chosen.append(inv[key])
+            else:
+                # fallback: scan all brands inside the question
+                for b in uniq_brands:
+                    if _norm(b) and _norm(b) in text_norm and b not in chosen:
+                        chosen.append(b)
+
+            if chosen:
+                filters["brand"] = chosen
+                if len(chosen) > 1:
+                    brand_group = True
+
+    # --- keep your old splitter for a single brand string like "Alpha, Beta" in filters ---
+    bval = filters.get("brand")
+    if isinstance(bval, str):
+        parts = [p.strip() for p in re.split(r"\s*(?:,|and|&|\+)\s*", bval, flags=re.I) if p.strip()]
+        if len(parts) > 1:
+            filters["brand"] = parts
+            brand_group = True
+
+    # If grouping by brand, drop a single fixed brand (avoid double restriction)
+    if brand_group and "brand" in filters:
+        is_single = not isinstance(filters["brand"], (list, tuple, set)) or len(filters["brand"]) <= 1
+        if is_single:
+            filters.pop("brand", None)
 
     # ---------- choose window for ordinary (single) runs ----------
     if mode == "MAT":
@@ -1743,8 +1800,7 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
     # ---------- base frame ----------
     base = apply_filters(df, filters)
 
-    # ===================== MAT COMPARISON BRANCH (unchanged logic) =====================
-    # ===================== MAT COMPARISON BRANCH =====================
+    # ===================== MAT COMPARISON BRANCH (unchanged) =====================
     def _extract_mat_years(text: str) -> List[int]:
         years = []
         for y in re.findall(r"\bmat[\s\-]?((?:20)?\d{2})\b", text):
@@ -1767,7 +1823,6 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
         anchor_month = system_prev_end.month
         if not mat_years:
             mat_years = [system_prev_end.year, system_prev_end.year - 1]
-
         measures_list = intent.get("measures") or []
         use_unit = "unit_sales" in measures_list or measure == "unit_sales"
         base_measure = "unit_sales" if use_unit else "value_sales"
@@ -1783,18 +1838,13 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             return frame.groupby(lambda _: True, dropna=False)[col].sum().reset_index(drop=True).to_frame(col)
 
         frames, labels = [], []
-        # track overall min start / max end so we can populate meta["window"]
         overall_start, overall_end = None, None
-
         for y in mat_years:
             cmp_end = pd.Timestamp(year=y, month=anchor_month, day=1).to_period("M").to_timestamp(how="end")
             cmp_end = min(cmp_end, dataset_last_full)
             cmp_start = (cmp_end.to_period("M") - 11).to_timestamp(how="start")
-
-            # track span
             overall_start = cmp_start if overall_start is None else min(overall_start, cmp_start)
             overall_end   = cmp_end   if overall_end   is None else max(overall_end,   cmp_end)
-
             mask = (base["date"] >= cmp_start) & (base["date"] <= cmp_end)
             agg = _agg(base.loc[mask], dims_for_cmp, base_measure)
             label = f"MAT {y}"
@@ -1806,16 +1856,10 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             out["mat_label"] = pd.Categorical(out["mat_label"], categories=labels, ordered=True)
 
         out = _safe_numeric_fill(out)
-
         return {
             "data": out,
             "meta": {
-                "mat_compare": {
-                    "anchor_month": anchor_month,
-                    "years": mat_years,
-                    "labels": labels,
-                },
-                # ✅ add a synthetic window so callers like main.py can safely read it
+                "mat_compare": {"anchor_month": anchor_month, "years": mat_years, "labels": labels},
                 "window": {
                     "start": (overall_start.date().isoformat() if overall_start is not None else None),
                     "end":   (overall_end.date().isoformat()   if overall_end   is not None else None),
@@ -1828,14 +1872,12 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
                 "chart_type": "bar",
             },
         }
-# =================== END: MAT COMPARISON BRANCH ===================
 
-
-    # ===================== MoM BRANCH (left unchanged) =====================
+    # ===================== MoM BRANCH (your code unchanged) =====================
     measures_list = intent.get("measures") or []
     need_mom = bool(intent.get("mom")) or ("value_mom" in measures_list) or (intent.get("sort_by") == "value_mom")
     if need_mom:
-        # ... your existing MoM logic lives here ...
+        # ... your existing MoM logic ...
         pass
 
     # ===================== YoY BRANCH (unchanged math) =====================
@@ -1859,7 +1901,6 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
         cur_mask = (base["date"] >= start) & (base["date"] <= end)
         sliced   = base.loc[cur_mask]
         cur_agg  = _agg(sliced, dims_for_yoy, base_measure).rename(columns={base_measure: curr_col})
-
         prev_start = (start.to_period("M") - 12).to_timestamp(how="start")
         prev_end   = (end.to_period("M")   - 12).to_timestamp(how="end")
         prev_agg   = _agg(base[(base["date"] >= prev_start) & (base["date"] <= prev_end)], dims_for_yoy, base_measure)\
@@ -1868,8 +1909,7 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
         out = (cur_agg.merge(prev_agg, on=dims_for_yoy, how="left") if dims_for_yoy
                else pd.concat([cur_agg, prev_agg], axis=1))
 
-        prev_vals = out[prev_col]
-        cur_vals  = out[curr_col]
+        prev_vals = out[prev_col]; cur_vals = out[curr_col]
         with np.errstate(divide="ignore", invalid="ignore"):
             out[yoy_col] = np.where((prev_vals.isna()) | (prev_vals == 0), np.nan, (cur_vals / prev_vals) - 1)
 
@@ -1880,7 +1920,6 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             out = out.head(top_n)
 
         out = _safe_numeric_fill(out)
-
         chart_type = _decide_chart_type(task, dims_for_yoy, asked_yoy=True, brand_group=brand_group)
         return {
             "data": out,
@@ -1914,9 +1953,7 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
                     out[lbl] = filters[lbl]
             label_cols = [c for c in ("category","market","channel","brand") if c in out.columns]
             out = out[label_cols + [c for c in out.columns if c not in label_cols]]
-
             out = _safe_numeric_fill(out)
-
             chart_type = _decide_chart_type("topn", [], asked_yoy=False, brand_group=brand_group)
             return {
                 "data": out,
@@ -1936,9 +1973,7 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             out = out.drop_duplicates(subset=["brand"], keep="first").head(top_n)
         else:
             out = out.head(top_n)
-
         out = _safe_numeric_fill(out)
-
         chart_type = _decide_chart_type("topn", [preferred_dim], asked_yoy=False, brand_group=brand_group)
         return {
             "data": out,
@@ -1953,7 +1988,15 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             },
         }
 
-    # normal aggregate / chart
+    # ---------- normal aggregate / chart ----------
+    # NEW: if it's a time-series chart and multiple brands were requested (or brand_group=True),
+    # ensure 'brand' stays in dims so the frontend gets one line per brand.
+    multi_brand = isinstance(filters.get("brand"), (list, tuple, set)) and len(filters["brand"]) > 1
+    if intent.get("task") == "chart" and ("date" in (dims or [])) and (multi_brand or brand_group):
+        if "brand" not in dims:
+            dims = [*dims, "brand"]
+
+    # your existing pruning rules
     if not ("date" in dims and intent.get("task") == "chart"):
         dims = [d for d in (dims or []) if d != "date"]
     if not brand_group:
@@ -1968,7 +2011,6 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
         out = out[label_cols + [c for c in out.columns if c not in label_cols]]
 
     out = _safe_numeric_fill(out)
-
     chart_type = _decide_chart_type(task, dims, asked_yoy=False, brand_group=brand_group)
     return {
         "data": out,
@@ -1982,6 +2024,24 @@ def run_pandas_intent(df: pd.DataFrame, intent: Dict[str, Any]) -> Dict[str, Any
             "chart_type": chart_type,
         },
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
