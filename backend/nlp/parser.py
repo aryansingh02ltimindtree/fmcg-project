@@ -682,6 +682,7 @@
 
 
 
+#Working code bad insights
 
 
 import re
