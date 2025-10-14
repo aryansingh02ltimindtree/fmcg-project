@@ -4134,11 +4134,14 @@ if out:
 
     # ---- Insights Tab ----
     with tabs[2]:
-        st.subheader("Key insights")
+        st.subheader("Rule based insights")
         try:
-            if "insights" in out and out["insights"] and out["insights"].get("bullets"):
-                for s in out["insights"]["bullets"]:
+            if "insights" in out and out["insights"] and out["insights"].get("rule_based_bullets"):
+                
+                for s in out["insights"]["rule_based_bullets"]:
                     st.write(f"• {s}")
+            
+            
             else:
                 # Fallback: derive quick tips locally
                 local_bullets = derive_insights_from_table(df, meta)
@@ -4149,8 +4152,32 @@ if out:
                     st.caption("No obvious insights for this result.")
             if isinstance(out.get("insights", {}), dict) and out["insights"].get("evidence_note"):
                 st.caption(out["insights"]["evidence_note"])
+            
         except Exception as e:
             st.caption(f"(Couldn’t render insights: {e})")
+        #LLM based insights
+        st.subheader("LLM based insights")
+        try:
+            if "insights" in out and out["insights"] and out["insights"].get("llm_based_bullets"):
+                
+                for s in out["insights"]["llm_based_bullets"]:
+                    st.write(f"• {s}")
+            
+            
+            else:
+                # Fallback: derive quick tips locally
+                local_bullets = derive_insights_from_table(df, meta)
+                if local_bullets:
+                    for s in local_bullets:
+                        st.write(f"• {s}")
+                else:
+                    st.caption("No obvious insights for this result.")
+            if isinstance(out.get("insights", {}), dict) and out["insights"].get("evidence_note"):
+                st.caption(out["insights"]["evidence_note"])
+            
+        except Exception as e:
+            st.caption(f"(Couldn’t render insights: {e})")
+
 
     # ---- Signals Tab ----
     with tabs[3]:

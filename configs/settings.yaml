@@ -4,3 +4,6 @@ duckdb_path: "backend/data/nielsen.duckdb"
 parquet_path: "backend/data/fact.parquet"
 table_name: "fact"
 max_rows: 5000
+
+
+gemini_api_key: "your_api_key_here"
